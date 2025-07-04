@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QLabel,
 )
 
-from models import Character, DEFAULT_SKILLS, Skill
+from models import Character, DEFAULT_SKILLS, Skill, PsychicPower
 from storage import load_character, save_character
 
 
@@ -310,6 +310,94 @@ class GearTab(_ListEditTab):
         char.gear = [self.list_widget.item(i).text() for i in range(self.list_widget.count())]
 
 
+# ---------------- Additional Tabs ----------------
+
+
+class ArmourTab(QWidget):
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.spins: dict[str, QSpinBox] = {}
+        form = QFormLayout(self)
+        for part in ["Head", "Arms", "Body", "Legs"]:
+            spin = QSpinBox()
+            spin.setRange(0, 20)
+            form.addRow(part + " AP:", spin)
+            self.spins[part] = spin
+
+    def load_character(self, char: Character):
+        self.spins["Head"].setValue(char.armour.head)
+        self.spins["Arms"].setValue(char.armour.arms)
+        self.spins["Body"].setValue(char.armour.body)
+        self.spins["Legs"].setValue(char.armour.legs)
+
+    def update_character(self, char: Character):
+        char.armour.head = self.spins["Head"].value()
+        char.armour.arms = self.spins["Arms"].value()
+        char.armour.body = self.spins["Body"].value()
+        char.armour.legs = self.spins["Legs"].value()
+
+
+class PsykerTab(QWidget):
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        rating_layout = QFormLayout()
+        self.rating_spin = QSpinBox()
+        self.rating_spin.setRange(0, 10)
+        rating_layout.addRow("Psy Rating:", self.rating_spin)
+        layout.addLayout(rating_layout)
+
+        self.powers_tab = _ListEditTab("Power", [])
+        layout.addWidget(self.powers_tab)
+
+    def load_character(self, char: Character):
+        self.rating_spin.setValue(char.psy_rating)
+        self.powers_tab.list_widget.clear()
+        self.powers_tab.list_widget.addItems([p.name for p in char.psychic_powers])
+
+    def update_character(self, char: Character):
+        char.psy_rating = self.rating_spin.value()
+        char.psychic_powers = [PsychicPower(name=self.powers_tab.list_widget.item(i).text()) for i in range(self.powers_tab.list_widget.count())]
+
+
+class StatusTab(QWidget):
+    """Corruption, Insanity, Mutations, Disorders"""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.corr_spin = QSpinBox(); self.corr_spin.setRange(0, 100)
+        self.ins_spin = QSpinBox(); self.ins_spin.setRange(0, 100)
+        form.addRow("Corruption:", self.corr_spin)
+        form.addRow("Insanity:", self.ins_spin)
+        layout.addLayout(form)
+
+        self.mutations_tab = _ListEditTab("Mutation", [])
+        self.disorders_tab = _ListEditTab("Disorder", [])
+
+        layout.addWidget(QLabel("Mutations:"))
+        layout.addWidget(self.mutations_tab)
+        layout.addWidget(QLabel("Disorders:"))
+        layout.addWidget(self.disorders_tab)
+
+    def load_character(self, char: Character):
+        self.corr_spin.setValue(char.corruption)
+        self.ins_spin.setValue(char.insanity)
+
+        self.mutations_tab.list_widget.clear()
+        self.mutations_tab.list_widget.addItems(char.mutations)
+
+        self.disorders_tab.list_widget.clear()
+        self.disorders_tab.list_widget.addItems(char.disorders)
+
+    def update_character(self, char: Character):
+        char.corruption = self.corr_spin.value()
+        char.insanity = self.ins_spin.value()
+        char.mutations = [self.mutations_tab.list_widget.item(i).text() for i in range(self.mutations_tab.list_widget.count())]
+        char.disorders = [self.disorders_tab.list_widget.item(i).text() for i in range(self.disorders_tab.list_widget.count())]
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -328,6 +416,9 @@ class MainWindow(QMainWindow):
         self.experience_tab = ExperienceTab()
         self.talents_tab = TalentsTab()
         self.gear_tab = GearTab()
+        self.armour_tab = ArmourTab()
+        self.psyker_tab = PsykerTab()
+        self.status_tab = StatusTab()
 
         self.tabs.addTab(self.basic_tab, "Basic Info")
         self.tabs.addTab(self.attr_tab, "Attributes")
@@ -336,6 +427,9 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.experience_tab, "Experience")
         self.tabs.addTab(self.talents_tab, "Talents")
         self.tabs.addTab(self.gear_tab, "Gear")
+        self.tabs.addTab(self.armour_tab, "Armour")
+        self.tabs.addTab(self.psyker_tab, "Psyker")
+        self.tabs.addTab(self.status_tab, "Status")
         self.setCentralWidget(self.tabs)
 
         # Menu
@@ -413,6 +507,9 @@ class MainWindow(QMainWindow):
         self.experience_tab.load_character(self.character)
         self.talents_tab.load_character(self.character)
         self.gear_tab.load_character(self.character)
+        self.armour_tab.load_character(self.character)
+        self.psyker_tab.load_character(self.character)
+        self.status_tab.load_character(self.character)
 
     def update_character_from_ui(self):
         self.basic_tab.update_character(self.character)
@@ -422,6 +519,9 @@ class MainWindow(QMainWindow):
         self.experience_tab.update_character(self.character)
         self.talents_tab.update_character(self.character)
         self.gear_tab.update_character(self.character)
+        self.armour_tab.update_character(self.character)
+        self.psyker_tab.update_character(self.character)
+        self.status_tab.update_character(self.character)
 
     def maybe_save_changes(self) -> bool:
         if self.current_file is None:

@@ -168,6 +168,57 @@ class ExperienceBlock:
 
 
 @dataclass
+class ArmourBlock:
+    head: int = 0
+    arms: int = 0
+    body: int = 0
+    legs: int = 0
+
+    def as_dict(self) -> Dict[str, int]:
+        return {
+            "Head": self.head,
+            "Arms": self.arms,
+            "Body": self.body,
+            "Legs": self.legs,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, str | int]) -> "ArmourBlock":
+        return cls(
+            head=int(data.get("Head", 0)),
+            arms=int(data.get("Arms", 0)),
+            body=int(data.get("Body", 0)),
+            legs=int(data.get("Legs", 0)),
+        )
+
+
+@dataclass
+class Weapon:
+    name: str = ""
+    # Placeholder for full statline – only name is stored for now.
+
+    def to_string(self) -> str:
+        return self.name
+
+    @classmethod
+    def from_string(cls, s: str) -> "Weapon":
+        return cls(name=s.strip())
+
+
+# Psychic power simple representation
+@dataclass
+class PsychicPower:
+    name: str = ""
+
+    def to_string(self) -> str:
+        return self.name
+
+    @classmethod
+    def from_string(cls, s: str) -> "PsychicPower":
+        return cls(name=s.strip())
+
+
+@dataclass
 class Character:
     # ------------------- Basic Info --------------------
     name: str = ""
@@ -199,6 +250,19 @@ class Character:
     # Lists stored as simple strings for now
     talents: List[str] = field(default_factory=list)
     gear: List[str] = field(default_factory=list)
+
+    # Combat equipment & powers
+    armour: ArmourBlock = field(default_factory=ArmourBlock)
+    weapons: List[Weapon] = field(default_factory=list)
+
+    psy_rating: int = 0
+    psychic_powers: List[PsychicPower] = field(default_factory=list)
+
+    # Mental status & afflictions
+    corruption: int = 0
+    insanity: int = 0
+    mutations: List[str] = field(default_factory=list)
+    disorders: List[str] = field(default_factory=list)
 
     experience: ExperienceBlock = field(default_factory=ExperienceBlock)
 
@@ -243,6 +307,26 @@ class Character:
         # Experience
         cfg["Experience"] = {k: str(v) for k, v in self.experience.as_dict().items()}
 
+        # Armour, Weapons, Psychic Powers & Status
+        cfg["Armour"] = {k: str(v) for k, v in self.armour.as_dict().items()}
+
+        cfg["Weapons"] = {
+            "Items": "\n".join(w.to_string() for w in self.weapons)
+        }
+
+        cfg["Psyker"] = {
+            "Rating": str(self.psy_rating),
+            "Powers": "\n".join(p.to_string() for p in self.psychic_powers),
+        }
+
+        cfg["CorruptionInsanity"] = {
+            "Corruption": str(self.corruption),
+            "Insanity": str(self.insanity),
+        }
+
+        cfg["Mutations"] = {"Items": "\n".join(self.mutations)}
+        cfg["Disorders"] = {"Items": "\n".join(self.disorders)}
+
         # Talents & Gear (store as newline‐separated list in single key)
         cfg["Talents"] = {"Items": "\n".join(self.talents)}
         cfg["Gear"] = {"Items": "\n".join(self.gear)}
@@ -260,6 +344,12 @@ class Character:
         xp_section = cfg["Experience"] if "Experience" in cfg else {}
         talents_section = cfg["Talents"] if "Talents" in cfg else {}
         gear_section = cfg["Gear"] if "Gear" in cfg else {}
+        armour_section = cfg["Armour"] if "Armour" in cfg else {}
+        weapons_section = cfg["Weapons"] if "Weapons" in cfg else {}
+        psy_section = cfg["Psyker"] if "Psyker" in cfg else {}
+        corruption_section = cfg["CorruptionInsanity"] if "CorruptionInsanity" in cfg else {}
+        mutations_section = cfg["Mutations"] if "Mutations" in cfg else {}
+        disorders_section = cfg["Disorders"] if "Disorders" in cfg else {}
 
         char = cls(
             name=basic.get("Name", ""),
@@ -279,6 +369,7 @@ class Character:
             wounds=WoundsBlock.from_dict(wounds_section),
             movement=MovementBlock.from_dict(movement_section),
             experience=ExperienceBlock.from_dict(xp_section),
+            armour=ArmourBlock.from_dict(armour_section),
         )
 
         # Parse skills
@@ -295,5 +386,22 @@ class Character:
 
         gear_items = gear_section.get("Items", "").splitlines()
         char.gear = [g for g in gear_items if g.strip()]
+
+        # Weapons list
+        weapon_lines = weapons_section.get("Items", "").splitlines()
+        char.weapons = [Weapon.from_string(line) for line in weapon_lines if line.strip()]
+
+        # Psyker
+        char.psy_rating = int(psy_section.get("Rating", 0))
+        power_lines = psy_section.get("Powers", "").splitlines()
+        char.psychic_powers = [PsychicPower.from_string(l) for l in power_lines if l.strip()]
+
+        # Corruption/Insanity
+        char.corruption = int(corruption_section.get("Corruption", 0))
+        char.insanity = int(corruption_section.get("Insanity", 0))
+
+        # Mutations / Disorders
+        char.mutations = [m for m in mutations_section.get("Items", "").splitlines() if m.strip()]
+        char.disorders = [d for d in disorders_section.get("Items", "").splitlines() if d.strip()]
 
         return char
