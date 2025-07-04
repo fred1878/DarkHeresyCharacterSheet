@@ -23,9 +23,12 @@ from PySide6.QtWidgets import (
     QPushButton,
     QInputDialog,
     QLabel,
+    QDialog,
+    QDialogButtonBox,
+    QComboBox,
 )
 
-from models import Character, DEFAULT_SKILLS, Skill, PsychicPower
+from models import Character, DEFAULT_SKILLS, Skill, PsychicPower, Weapon
 from storage import load_character, save_character
 
 
@@ -337,6 +340,145 @@ class ArmourTab(QWidget):
         char.armour.legs = self.spins["Legs"].value()
 
 
+# ---------------- Weapons ----------------
+
+
+class WeaponEditorDialog(QDialog):
+    """Dialog to add/edit a weapon with full statline."""
+
+    def __init__(self, weapon: Weapon | None = None, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Weapon Editor")
+        self.setModal(True)
+
+        self.fields: dict[str, QWidget] = {}
+        form = QFormLayout(self)
+
+        # Definitions
+        specs = [
+            ("Name", QLineEdit),
+            ("Type", QComboBox),
+            ("Class", QComboBox),
+            ("Range", QLineEdit),
+            ("RoF", QLineEdit),
+            ("Damage", QLineEdit),
+            ("Pen", QSpinBox),
+            ("Clip", QLineEdit),
+            ("Rld", QLineEdit),
+            ("Special", QLineEdit),
+        ]
+
+        for label, widget_cls in specs:
+            if widget_cls is QComboBox:
+                w = widget_cls()
+                if label == "Type":
+                    w.addItems(["Melee", "Ranged"])
+                elif label == "Class":
+                    w.addItems(["Basic", "Pistol", "Heavy", "Thrown", "Melee"])
+            else:
+                w = widget_cls()
+            if isinstance(w, QSpinBox):
+                w.setRange(0, 100)
+            form.addRow(label + ":", w)
+            self.fields[label] = w
+
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+        if weapon:
+            self._load_weapon(weapon)
+
+    def _load_weapon(self, w: Weapon):
+        self.fields["Name"].setText(w.name)
+        self.fields["Type"].setCurrentText(w.wtype)
+        self.fields["Class"].setCurrentText(w.wclass)
+        self.fields["Range"].setText(w.range)
+        self.fields["RoF"].setText(w.rof)
+        self.fields["Damage"].setText(w.damage)
+        self.fields["Pen"].setValue(w.penetration)
+        self.fields["Clip"].setText(w.clip)
+        self.fields["Rld"].setText(w.reload)
+        self.fields["Special"].setText(w.special)
+
+    def get_weapon(self) -> Weapon | None:
+        if self.exec() == QDialog.Accepted:
+            name = self.fields["Name"].text().strip()
+            if not name:
+                QMessageBox.warning(self, "Validation", "Weapon must have a name")
+                return None
+            return Weapon(
+                name=name,
+                wtype=self.fields["Type"].currentText(),
+                wclass=self.fields["Class"].currentText(),
+                range=self.fields["Range"].text().strip(),
+                rof=self.fields["RoF"].text().strip(),
+                damage=self.fields["Damage"].text().strip(),
+                penetration=self.fields["Pen"].value(),
+                clip=self.fields["Clip"].text().strip(),
+                reload=self.fields["Rld"].text().strip(),
+                special=self.fields["Special"].text().strip(),
+            )
+        return None
+
+
+class WeaponsTab(QWidget):
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        self.list_widget = QListWidget()
+        layout.addWidget(self.list_widget)
+
+        btn_layout = QHBoxLayout()
+        add_btn = QPushButton("Add")
+        edit_btn = QPushButton("Edit")
+        remove_btn = QPushButton("Remove")
+        btn_layout.addWidget(add_btn)
+        btn_layout.addWidget(edit_btn)
+        btn_layout.addWidget(remove_btn)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+
+        add_btn.clicked.connect(self.add_weapon)
+        edit_btn.clicked.connect(self.edit_selected)
+        remove_btn.clicked.connect(self.remove_selected)
+
+        self.list_widget.itemDoubleClicked.connect(self.edit_selected)
+
+    def _weapon_from_item(self, item_text: str) -> Weapon:
+        return Weapon.from_string(item_text)
+
+    def add_weapon(self):
+        dlg = WeaponEditorDialog(parent=self)
+        weap = dlg.get_weapon()
+        if weap:
+            self.list_widget.addItem(weap.to_string())
+
+    def edit_selected(self):
+        items = self.list_widget.selectedItems()
+        if not items:
+            return
+        item = items[0]
+        weapon_obj = Weapon.from_string(item.text())
+        dlg = WeaponEditorDialog(weapon=weapon_obj, parent=self)
+        updated = dlg.get_weapon()
+        if updated:
+            item.setText(updated.to_string())
+
+    def remove_selected(self):
+        for item in self.list_widget.selectedItems():
+            self.list_widget.takeItem(self.list_widget.row(item))
+
+    def load_character(self, char: Character):
+        self.list_widget.clear()
+        self.list_widget.addItems([w.to_string() for w in char.weapons])
+
+    def update_character(self, char: Character):
+        char.weapons = [Weapon.from_string(self.list_widget.item(i).text()) for i in range(self.list_widget.count())]
+
+
 class PsykerTab(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -416,6 +558,7 @@ class MainWindow(QMainWindow):
         self.experience_tab = ExperienceTab()
         self.talents_tab = TalentsTab()
         self.gear_tab = GearTab()
+        self.weapons_tab = WeaponsTab()
         self.armour_tab = ArmourTab()
         self.psyker_tab = PsykerTab()
         self.status_tab = StatusTab()
@@ -427,6 +570,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.experience_tab, "Experience")
         self.tabs.addTab(self.talents_tab, "Talents")
         self.tabs.addTab(self.gear_tab, "Gear")
+        self.tabs.addTab(self.weapons_tab, "Weapons")
         self.tabs.addTab(self.armour_tab, "Armour")
         self.tabs.addTab(self.psyker_tab, "Psyker")
         self.tabs.addTab(self.status_tab, "Status")
@@ -507,6 +651,7 @@ class MainWindow(QMainWindow):
         self.experience_tab.load_character(self.character)
         self.talents_tab.load_character(self.character)
         self.gear_tab.load_character(self.character)
+        self.weapons_tab.load_character(self.character)
         self.armour_tab.load_character(self.character)
         self.psyker_tab.load_character(self.character)
         self.status_tab.load_character(self.character)
@@ -519,6 +664,7 @@ class MainWindow(QMainWindow):
         self.experience_tab.update_character(self.character)
         self.talents_tab.update_character(self.character)
         self.gear_tab.update_character(self.character)
+        self.weapons_tab.update_character(self.character)
         self.armour_tab.update_character(self.character)
         self.psyker_tab.update_character(self.character)
         self.status_tab.update_character(self.character)
@@ -544,6 +690,18 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    # Apply a simple grimdark 40K-inspired palette.
+    dark_qss = """
+        QWidget { background-color: #101010; color: #d0d0d0; }
+        QTabBar::tab { background: #202020; padding: 6px; border: 1px solid #303030; }
+        QTabBar::tab:selected { background: #3a2a00; color: #e0c060; }
+        QMenuBar, QMenu { background-color: #202020; color: #d0d0d0; }
+        QPushButton { background-color: #282828; border: 1px solid #404040; padding: 4px 8px; }
+        QPushButton:hover { background-color: #3e3e3e; }
+        QLineEdit, QSpinBox, QComboBox, QListWidget { background-color: #181818; border: 1px solid #303030; color: #e0e0e0; }
+        QLabel { color: #d0d0d0; }
+    """
+    app.setStyleSheet(dark_qss)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

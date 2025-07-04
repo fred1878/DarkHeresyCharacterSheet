@@ -195,14 +195,50 @@ class ArmourBlock:
 @dataclass
 class Weapon:
     name: str = ""
-    # Placeholder for full statline – only name is stored for now.
+    wtype: str = ""  # e.g., Melee, Ranged
+    wclass: str = ""  # e.g., Basic, Pistol
+    range: str = ""  # could be "30m" or "–" for melee
+    rof: str = ""  # Rate of Fire string e.g., "S/2/–"
+    damage: str = ""  # e.g., "1d10+4 R"
+    penetration: int = 0
+    clip: str = ""  # e.g., "30"
+    reload: str = ""  # e.g., "Full"
+    special: str = ""  # free-text qualities
+
+    _DELIM = " | "
 
     def to_string(self) -> str:
-        return self.name
+        parts = [
+            self.name,
+            self.wtype,
+            self.wclass,
+            self.range,
+            self.rof,
+            self.damage,
+            str(self.penetration),
+            self.clip,
+            self.reload,
+            self.special,
+        ]
+        return self._DELIM.join(parts)
 
     @classmethod
     def from_string(cls, s: str) -> "Weapon":
-        return cls(name=s.strip())
+        parts = s.split(cls._DELIM)
+        # Pad missing fields
+        parts += [""] * (10 - len(parts))
+        return cls(
+            name=parts[0].strip(),
+            wtype=parts[1].strip(),
+            wclass=parts[2].strip(),
+            range=parts[3].strip(),
+            rof=parts[4].strip(),
+            damage=parts[5].strip(),
+            penetration=int(parts[6].strip() or 0),
+            clip=parts[7].strip(),
+            reload=parts[8].strip(),
+            special=parts[9].strip(),
+        )
 
 
 # Psychic power simple representation
