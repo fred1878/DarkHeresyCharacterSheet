@@ -108,6 +108,66 @@ DEFAULT_SKILLS = [
 
 
 @dataclass
+class WoundsBlock:
+    current: int = 0
+    max: int = 0
+    fatigue: int = 0
+
+    def as_dict(self) -> Dict[str, int]:
+        return {"Current": self.current, "Max": self.max, "Fatigue": self.fatigue}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, str | int]) -> "WoundsBlock":
+        return cls(
+            current=int(data.get("Current", 0)),
+            max=int(data.get("Max", 0)),
+            fatigue=int(data.get("Fatigue", 0)),
+        )
+
+
+@dataclass
+class MovementBlock:
+    half: int = 0
+    full: int = 0
+    charge: int = 0
+    run: int = 0
+
+    def as_dict(self) -> Dict[str, int]:
+        return {
+            "Half": self.half,
+            "Full": self.full,
+            "Charge": self.charge,
+            "Run": self.run,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, str | int]) -> "MovementBlock":
+        return cls(
+            half=int(data.get("Half", 0)),
+            full=int(data.get("Full", 0)),
+            charge=int(data.get("Charge", 0)),
+            run=int(data.get("Run", 0)),
+        )
+
+
+@dataclass
+class ExperienceBlock:
+    total: int = 0
+    spent: int = 0
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.total - self.spent)
+
+    def as_dict(self) -> Dict[str, int]:
+        return {"Total": self.total, "Spent": self.spent, "Remaining": self.remaining}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, str | int]) -> "ExperienceBlock":
+        return cls(total=int(data.get("Total", 0)), spent=int(data.get("Spent", 0)))
+
+
+@dataclass
 class Character:
     # ------------------- Basic Info --------------------
     name: str = ""
@@ -132,7 +192,15 @@ class Character:
         default_factory=lambda: {name: Skill() for name in DEFAULT_SKILLS}
     )
 
-    # TODO: Add wounds, talents, equipment, etc.
+    # ------------------- Combat & Misc -----------------
+    wounds: WoundsBlock = field(default_factory=WoundsBlock)
+    movement: MovementBlock = field(default_factory=MovementBlock)
+
+    # Lists stored as simple strings for now
+    talents: List[str] = field(default_factory=list)
+    gear: List[str] = field(default_factory=list)
+
+    experience: ExperienceBlock = field(default_factory=ExperienceBlock)
 
     # ----------------------------------------------------
     def as_config(self) -> "configparser.ConfigParser":
@@ -168,6 +236,17 @@ class Character:
             skills_section[f"{name}_Rank"] = rank_str
         cfg["Skills"] = skills_section
 
+        # Wounds & Movement
+        cfg["Wounds"] = {k: str(v) for k, v in self.wounds.as_dict().items()}
+        cfg["Movement"] = {k: str(v) for k, v in self.movement.as_dict().items()}
+
+        # Experience
+        cfg["Experience"] = {k: str(v) for k, v in self.experience.as_dict().items()}
+
+        # Talents & Gear (store as newline‐separated list in single key)
+        cfg["Talents"] = {"Items": "\n".join(self.talents)}
+        cfg["Gear"] = {"Items": "\n".join(self.gear)}
+
         return cfg
 
     @classmethod
@@ -176,6 +255,11 @@ class Character:
         basic = cfg["Basic"] if "Basic" in cfg else {}
         attributes = cfg["Attributes"] if "Attributes" in cfg else {}
         skills_section = cfg["Skills"] if "Skills" in cfg else {}
+        wounds_section = cfg["Wounds"] if "Wounds" in cfg else {}
+        movement_section = cfg["Movement"] if "Movement" in cfg else {}
+        xp_section = cfg["Experience"] if "Experience" in cfg else {}
+        talents_section = cfg["Talents"] if "Talents" in cfg else {}
+        gear_section = cfg["Gear"] if "Gear" in cfg else {}
 
         char = cls(
             name=basic.get("Name", ""),
@@ -192,6 +276,9 @@ class Character:
             eyes=basic.get("Eyes", ""),
             aura=basic.get("Aura", ""),
             attributes=AttributeBlock.from_dict(attributes),
+            wounds=WoundsBlock.from_dict(wounds_section),
+            movement=MovementBlock.from_dict(movement_section),
+            experience=ExperienceBlock.from_dict(xp_section),
         )
 
         # Parse skills
@@ -201,5 +288,12 @@ class Character:
             trained = skills_section.get(trained_key, "no")
             rank = skills_section.get(rank_key, "0")
             char.skills[name] = Skill.from_tuple((trained, rank))
+
+        # Talents / Gear
+        talents_items = talents_section.get("Items", "").splitlines()
+        char.talents = [t for t in talents_items if t.strip()]
+
+        gear_items = gear_section.get("Items", "").splitlines()
+        char.gear = [g for g in gear_items if g.strip()]
 
         return char

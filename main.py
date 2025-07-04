@@ -19,6 +19,10 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QAction,
     QHBoxLayout,
+    QListWidget,
+    QPushButton,
+    QInputDialog,
+    QLabel,
 )
 
 from models import Character, DEFAULT_SKILLS, Skill
@@ -156,6 +160,156 @@ class SkillsTab(QWidget):
             char.skills[skill].rank = spin.value()
 
 
+# ------------------ New Tabs --------------------
+
+
+class WoundsTab(QWidget):
+    """Handles wounds, fatigue and movement speeds."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.spins: dict[str, QSpinBox] = {}
+        form = QFormLayout(self)
+
+        # Wounds / Fatigue
+        for label in ["Current Wounds", "Max Wounds", "Fatigue"]:
+            spin = QSpinBox()
+            spin.setRange(0, 100)
+            form.addRow(label + ":", spin)
+            self.spins[label] = spin
+
+        form.addRow(QLabel("<b>Movement</b>"))
+
+        for mv_label in ["Half", "Full", "Charge", "Run"]:
+            spin = QSpinBox()
+            spin.setRange(0, 99)
+            form.addRow(mv_label + ":", spin)
+            self.spins[mv_label] = spin
+
+    # Mapping keys
+    _w_map = {
+        "Current Wounds": "current",
+        "Max Wounds": "max",
+        "Fatigue": "fatigue",
+    }
+
+    _m_map = {
+        "Half": "half",
+        "Full": "full",
+        "Charge": "charge",
+        "Run": "run",
+    }
+
+    def load_character(self, char: Character):
+        # Wounds
+        for gui_label, attr in self._w_map.items():
+            self.spins[gui_label].setValue(getattr(char.wounds, attr))
+
+        for gui_label, attr in self._m_map.items():
+            self.spins[gui_label].setValue(getattr(char.movement, attr))
+
+    def update_character(self, char: Character):
+        for gui_label, attr in self._w_map.items():
+            setattr(char.wounds, attr, self.spins[gui_label].value())
+
+        for gui_label, attr in self._m_map.items():
+            setattr(char.movement, attr, self.spins[gui_label].value())
+
+
+class ExperienceTab(QWidget):
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.total_sp = QSpinBox()
+        self.spent_sp = QSpinBox()
+        self.remaining_lbl = QLabel("0")
+
+        for sp in (self.total_sp, self.spent_sp):
+            sp.setRange(0, 100000)
+
+        form = QFormLayout(self)
+        form.addRow("Total XP:", self.total_sp)
+        form.addRow("Spent XP:", self.spent_sp)
+        form.addRow("Remaining XP:", self.remaining_lbl)
+
+        # Update remaining when values change
+        self.total_sp.valueChanged.connect(self._update_remaining)
+        self.spent_sp.valueChanged.connect(self._update_remaining)
+
+    def _update_remaining(self):
+        remaining = max(0, self.total_sp.value() - self.spent_sp.value())
+        self.remaining_lbl.setText(str(remaining))
+
+    def load_character(self, char: Character):
+        self.total_sp.setValue(char.experience.total)
+        self.spent_sp.setValue(char.experience.spent)
+        self._update_remaining()
+
+    def update_character(self, char: Character):
+        char.experience.total = self.total_sp.value()
+        char.experience.spent = self.spent_sp.value()
+
+
+class _ListEditTab(QWidget):
+    """Utility base class for list-of-strings editing."""
+
+    def __init__(self, title: str, items: list[str], parent: QWidget | None = None):
+        super().__init__(parent)
+        self._title = title
+        self.list_widget = QListWidget()
+        self.list_widget.addItems(items)
+
+        add_btn = QPushButton("Add")
+        remove_btn = QPushButton("Remove")
+
+        add_btn.clicked.connect(self.add_item)
+        remove_btn.clicked.connect(self.remove_selected)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addWidget(add_btn)
+        btn_layout.addWidget(remove_btn)
+        btn_layout.addStretch()
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.list_widget)
+        layout.addLayout(btn_layout)
+
+    def add_item(self):
+        text, ok = QInputDialog.getText(self, f"Add {self._title}", f"{self._title}:")
+        if ok and text.strip():
+            self.list_widget.addItem(text.strip())
+
+    def remove_selected(self):
+        for item in self.list_widget.selectedItems():
+            row = self.list_widget.row(item)
+            self.list_widget.takeItem(row)
+
+    # subclasses implement load & update
+
+
+class TalentsTab(_ListEditTab):
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__("Talent", [], parent)
+
+    def load_character(self, char: Character):
+        self.list_widget.clear()
+        self.list_widget.addItems(char.talents)
+
+    def update_character(self, char: Character):
+        char.talents = [self.list_widget.item(i).text() for i in range(self.list_widget.count())]
+
+
+class GearTab(_ListEditTab):
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__("Gear", [], parent)
+
+    def load_character(self, char: Character):
+        self.list_widget.clear()
+        self.list_widget.addItems(char.gear)
+
+    def update_character(self, char: Character):
+        char.gear = [self.list_widget.item(i).text() for i in range(self.list_widget.count())]
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -170,9 +324,18 @@ class MainWindow(QMainWindow):
         self.basic_tab = BasicInfoTab()
         self.attr_tab = AttributesTab()
         self.skills_tab = SkillsTab()
+        self.wounds_tab = WoundsTab()
+        self.experience_tab = ExperienceTab()
+        self.talents_tab = TalentsTab()
+        self.gear_tab = GearTab()
+
         self.tabs.addTab(self.basic_tab, "Basic Info")
         self.tabs.addTab(self.attr_tab, "Attributes")
         self.tabs.addTab(self.skills_tab, "Skills")
+        self.tabs.addTab(self.wounds_tab, "Wounds & Movement")
+        self.tabs.addTab(self.experience_tab, "Experience")
+        self.tabs.addTab(self.talents_tab, "Talents")
+        self.tabs.addTab(self.gear_tab, "Gear")
         self.setCentralWidget(self.tabs)
 
         # Menu
@@ -246,11 +409,19 @@ class MainWindow(QMainWindow):
         self.basic_tab.load_character(self.character)
         self.attr_tab.load_character(self.character)
         self.skills_tab.load_character(self.character)
+        self.wounds_tab.load_character(self.character)
+        self.experience_tab.load_character(self.character)
+        self.talents_tab.load_character(self.character)
+        self.gear_tab.load_character(self.character)
 
     def update_character_from_ui(self):
         self.basic_tab.update_character(self.character)
         self.attr_tab.update_character(self.character)
         self.skills_tab.update_character(self.character)
+        self.wounds_tab.update_character(self.character)
+        self.experience_tab.update_character(self.character)
+        self.talents_tab.update_character(self.character)
+        self.gear_tab.update_character(self.character)
 
     def maybe_save_changes(self) -> bool:
         if self.current_file is None:
